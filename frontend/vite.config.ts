@@ -6,7 +6,7 @@ export default defineConfig({
   // Hub App Space: path_prefix /{slug}/ — obrigatório para assets e API relativas.
   base: "/real-estate-control/",
   build: {
-    outDir: "../dist",
+    outDir: "dist",
     emptyOutDir: true,
   },
   server: {

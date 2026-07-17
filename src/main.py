@@ -29,7 +29,9 @@ def health():
     return {"status": "ok"}
 
 
-# API routes: src/routers/ (AS2I / AS3I)
+# API routes
+from src.routers import metrics
+app.include_router(metrics.router)
 
 _dist = Path("dist")
 if _dist.is_dir():

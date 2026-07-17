@@ -2,14 +2,15 @@
   "containers": [
     {
       "name": "mixed-1-real-estate-control",
-      "service_name": "mixed-1-real-estate-control",
+      "service_name": "mixed-1-real-estate-control-dev",
       "image_name": "realestatecontrol-app",
       "dockerfile": "Dockerfile",
       "context": ".",
       "port": 8080,
       "deploy_enabled": true,
       "env_vars": {
-        "LOG_LEVEL": "INFO"
+        "LOG_LEVEL": "INFO",
+        "ROOT_PATH": "/real-estate-control"
       }
     }
   ],

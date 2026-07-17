@@ -1,11 +1,11 @@
 # Status — real estate control
 
-**Fase para você:** Construindo
-**Última atualização:** 2026-07-17T00:06:28Z
+**Fase para você:** Publicando
+**Última atualização:** 2026-07-17T11:41:10Z
 
 ## O que está acontecendo
 
-Estamos construindo a solução.
+Etapa concluída.
 
 ## Próximo passo
 

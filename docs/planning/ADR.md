@@ -10,8 +10,8 @@
 **Lifecycle:** construcao
 **Arquétipo:** AS1I
 **Playbook:** AS1I-construcao.yaml
-**Step atual:** dev
-**Fase:** 4
+**Step atual:** verify_deploy
+**Fase:** ?
 **Modo:** AUTOMATION  
 **GitHub actor:** am-esteira-helpe[bot]  
 **Org:** A-M-App-Hub  

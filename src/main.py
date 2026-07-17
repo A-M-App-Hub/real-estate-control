@@ -30,9 +30,10 @@ def health():
 
 
 # API routes
-from src.routers import metrics, contracts
+from src.routers import metrics, contracts, properties
 app.include_router(metrics.router)
 app.include_router(contracts.router)
+app.include_router(properties.router)
 
 _dist = Path("dist")
 if _dist.is_dir():

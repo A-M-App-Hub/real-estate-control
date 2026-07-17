@@ -1,7 +1,9 @@
 from pathlib import Path
 import os
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Path prefix no App Space Hub (auth-proxy encaminha /{slug}/...).
@@ -23,10 +25,26 @@ app = FastAPI(title="real estate control", root_path=ROOT_PATH or "")
 if ROOT_PATH:
     app.add_middleware(StripRootPathMiddleware)
 
+# CORS middleware (AC-2.6)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # MVP: permitir todas as origens (ajustar em produção)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    """
+    Health check endpoint
+    AC-2.5: Retorna status do backend com timestamp
+    """
+    return {
+        "status": "ok",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
 # API routes

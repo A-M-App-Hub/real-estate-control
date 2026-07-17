@@ -12,6 +12,6 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen || uv sync
 COPY . .
-COPY --from=frontend-build /frontend/dist ./frontend/dist
+COPY --from=frontend-build /dist ./dist
 EXPOSE 8080
 CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]

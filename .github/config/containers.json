@@ -9,7 +9,8 @@
       "port": 8080,
       "deploy_enabled": true,
       "env_vars": {
-        "LOG_LEVEL": "INFO"
+        "LOG_LEVEL": "INFO",
+        "ROOT_PATH": "/real-estate-control"
       }
     }
   ],

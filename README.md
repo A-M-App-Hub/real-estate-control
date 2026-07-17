@@ -1,29 +1,71 @@
-# real estate control
+# Dashboard de Gestão Imobiliária (Real Estate Control)
 
-Dashboard de Gestão Imobiliária: painel administrativo para controle de contratos de aluguel, imóveis e proprietários. Inclui cards com métricas (receita, ocupação, inadimplência), gráfico de novos co
+Painel administrativo interno para consultores A&M controlarem contratos de aluguel, imóveis e proprietários de forma centralizada.
 
-## Setup
+## Visão Geral
+
+O Dashboard de Gestão Imobiliária oferece:
+- **Cards de Métricas**: Receita de aluguéis, taxa de ocupação e inadimplência em tempo real
+- **Gráfico de Contratos**: Visualização de novos contratos assinados por mês (últimos 12 meses)
+- **Tabela de Imóveis**: Listagem paginada de imóveis cadastrados
+- **Cadastro de Imóveis**: Formulário com validação para adicionar novos imóveis ao portfólio
+
+**Arquétipo**: AS1I (Frontend interno CAS - FastAPI + React)  
+**Stack**: FastAPI (Python 3.13+), React 19 + TypeScript, Vite, Recharts  
+**Persistência**: MVP com dados mockados em memória (sem banco de dados)
+
+## Pré-requisitos
+
+- **Python**: 3.13 ou superior
+- **Node.js**: 18 ou superior
+- **Bun**: Gerenciador de pacotes JavaScript (recomendado)
+- **uv**: Gerenciador de pacotes Python
+
+## Setup Local
+
+### Backend (FastAPI)
 
 ```bash
-uv sync
-uv run uvicorn src.main:app --reload
-uv run pytest --cov=src
+# Criar ambiente virtual e instalar dependências
+uv venv
+source .venv/bin/activate  # Linux/macOS
+
+uv pip install -e ".[dev]"
+
+# Executar servidor de desenvolvimento
+uvicorn src.main:app --reload --port 8000
 ```
 
-## Estrutura
+Backend estará disponível em: `http://localhost:8000`  
+Documentação Swagger UI: `http://localhost:8000/docs`
 
+### Frontend (React + Vite)
+
+```bash
+cd frontend
+bun install
+bun run dev
 ```
-src/             # Código da aplicação (FastAPI)
-tests/           # Testes (pytest)
-docs/            # Documentação e artefatos de planejamento
-docs/planning/   # Stories, blueprints, roadmaps, ADR
-skills/          # project-pipeline skill (gerada por pipeline-forge)
-iac_scripts/     # Scripts de infraestrutura (preenchidos por project-pipeline)
-.github/         # CI/CD workflows
+
+Frontend estará disponível em: `http://localhost:5173`
+
+## Executar Testes
+
+```bash
+source .venv/bin/activate
+pytest tests/unit/ --cov=src --cov-report=term-missing --cov-fail-under=80
 ```
 
-## Deploy
+**Cobertura atual**: 93%
 
-- Push em `story/**` ou `feat/**` → CI (lint + testes)
-- PR para `main` → CI + deploy automático em QA (após project-pipeline ativar CD)
-- Release publicada → deploy em prod via `skills/project-pipeline/SKILL.md`
+## APIs
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/health` | Health check |
+| GET | `/api/v1/metrics` | Métricas (receita, ocupação, inadimplência) |
+| GET | `/api/v1/contracts/monthly-stats` | Contratos por mês |
+| GET | `/api/v1/properties` | Lista imóveis (paginado) |
+| POST | `/api/v1/properties` | Cadastra imóvel |
+
+**Documentação completa**: `/docs` (Swagger UI)

@@ -6,6 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.routers import metrics, contracts, properties
+
 # Path prefix no App Space Hub (auth-proxy encaminha /{slug}/...).
 # Local/tests: vazio. Deploy hub: ROOT_PATH=/{slug}
 ROOT_PATH = os.environ.get("ROOT_PATH", "").rstrip("/")
@@ -48,7 +50,6 @@ def health():
 
 
 # API routes
-from src.routers import metrics, contracts, properties
 app.include_router(metrics.router)
 app.include_router(contracts.router)
 app.include_router(properties.router)

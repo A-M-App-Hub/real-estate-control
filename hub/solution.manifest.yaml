@@ -1,0 +1,7 @@
+slug: real-estate-control
+path_prefix: /real-estate-control
+service_name: mixed-1-real-estate-control
+archetype: <ARCHETYPE>
+repo: A-M-App-Hub/real-estate-control
+image: ""
+charge_code: <CHARGE_CODE>

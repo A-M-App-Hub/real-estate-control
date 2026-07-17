@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: real estate control
+  version: 1.0.0
+paths:
+  /:
+    get:
+      operationId: root
+      summary: App root (CAS return_to)
+      responses:
+        "200":
+          description: OK
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /{asset}:
+    get:
+      operationId: spa_assets
+      summary: SPA assets and client routes (API Gateway catch-all)
+      parameters:
+        - name: asset
+          in: path
+          required: true
+          schema:
+            type: string
+          x-google-parameter:
+            pattern: "**"
+      responses:
+        "200":
+          description: OK
+  /api/{api_path}:
+    get:
+      operationId: api_get_catchall
+      summary: API GET catch-all (browser fetch /api/* — evita 403 auth-proxy)
+      parameters:
+        - name: api_path
+          in: path
+          required: true
+          schema:
+            type: string
+          x-google-parameter:
+            pattern: "**"
+      responses:
+        "200":
+          description: OK
+      security:
+        - cas_jwt: []
+    post:
+      operationId: api_post_catchall
+      summary: API POST catch-all
+      parameters:
+        - name: api_path
+          in: path
+          required: true
+          schema:
+            type: string
+          x-google-parameter:
+            pattern: "**"
+      responses:
+        "200":
+          description: OK
+      security:
+        - cas_jwt: []
+    put:
+      operationId: api_put_catchall
+      summary: API PUT catch-all
+      parameters:
+        - name: api_path
+          in: path
+          required: true
+          schema:
+            type: string
+          x-google-parameter:
+            pattern: "**"
+      responses:
+        "200":
+          description: OK
+      security:
+        - cas_jwt: []
+    delete:
+      operationId: api_delete_catchall
+      summary: API DELETE catch-all
+      parameters:
+        - name: api_path
+          in: path
+          required: true
+          schema:
+            type: string
+          x-google-parameter:
+            pattern: "**"
+      responses:
+        "200":
+          description: OK
+      security:
+        - cas_jwt: []
+components:
+  securitySchemes:
+    cas_jwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: CAS JWT via auth-proxy (cookie am_admin_token)

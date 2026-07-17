@@ -1,0 +1,22 @@
+solution_name: "real estate control"
+repo_slug: "real-estate-control"
+description: |
+    Dashboard de Gestão Imobiliária: painel administrativo para controle de contratos de aluguel, imóveis e proprietários. Inclui cards com métricas (receita, ocupação, inadimplência), gráfico de novos contratos, tabela de imóveis e formulário de cadastro.
+users: "consultores A&M"
+success_criteria: "Entregar valor para consultores A&M"
+has_user_interface: true
+needs_persistence: false
+project_nickname: "real estate control"
+project_type: "Internal"
+client_code: ""
+charge_code: ""
+cost_owner: ""
+project_owner: ""
+monthly_budget: ""
+total_cost_budget: ""
+end_date: ""
+archetype: "AS1I"
+lifecycle: construcao
+created_at: "2026-07-16T23:28:22Z"
+intake_raw: |
+    Dashboard de Gestão Imobiliária: painel administrativo para controle de contratos de aluguel, imóveis e proprietários. Inclui cards com métricas (receita, ocupação, inadimplência), gráfico de novos contratos, tabela de imóveis e formulário de cadastro.

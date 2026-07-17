@@ -1,0 +1,17 @@
+{
+  "containers": [
+    {
+      "name": "mixed-1-real-estate-control",
+      "service_name": "mixed-1-real-estate-control",
+      "image_name": "realestatecontrol-app",
+      "dockerfile": "Dockerfile",
+      "context": ".",
+      "port": 8080,
+      "deploy_enabled": true,
+      "env_vars": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  ],
+  "_comment": "Topologia: FastAPI_Mixed (mixed-1-{slug}) no App Space Hub. Ver webapp-topologies.md §2.0.1"
+}

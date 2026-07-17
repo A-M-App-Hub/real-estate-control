@@ -1,0 +1,271 @@
+# ─────────────────────────────────────────────────────────────
+# Fonte da verdade: iac-actions/templates/cd/trigger-build-and-push.yml
+# Copiado para app repos via sync-esteira (iac_actions_pinned_sha).
+# Mudanças devem ser feitas AQUI, no iac-actions.
+# ─────────────────────────────────────────────────────────────
+
+# Trigger iac_actions Build & Deploy Containers (reusable)
+# Dispara build-deploy-containers.yml em A-M-Digital-Data-AI-LatAm/iac-actions.
+# Designed para ser chamado por workflows de CI/CD ou por entry points manuais.
+#
+# Autenticação via GitHub App (am-deploy-helper) — sem PAT pessoal.
+# Requer org variable AM_DEPLOY_HELPER_APP_ID e org secret AM_DEPLOY_HELPER_APP_PRIVATE_KEY.
+name: Trigger iac_actions Build and Deploy Containers
+
+on:
+  workflow_call:
+    inputs:
+      source_repository:
+        description: 'Repositório que contém a aplicação (ex: org/my-app)'
+        required: true
+        type: string
+      branch:
+        description: 'Branch do source_repository a usar no build/deploy (default: main)'
+        required: false
+        type: string
+        default: 'main'
+      env_target:
+        description: 'Ambiente alvo no iac-actions (Development | QA | Production)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Semver (e.g. 1.0.0) ou commit sha de 40 chars'
+        required: true
+        type: string
+      iac_scripts_folder:
+        description: 'Pasta com tfvars para resolver project_id (default: iac_scripts)'
+        required: false
+        type: string
+        default: 'iac_scripts'
+      dockerfile_folder:
+        description: 'Pasta com Dockerfiles no source_repository (default: .)'
+        required: false
+        type: string
+        default: '.'
+      containers_config_folder:
+        description: 'Pasta com containers.json no source_repository. OBRIGATÓRIO incluir subfolder de ambiente.'
+        required: true
+        type: string
+      gcp_project_id:
+        description: 'Projeto GCP (hub: am-hubs-appspace-d/q/p). Se definido, iac_scripts na solução não é necessário.'
+        required: false
+        type: string
+        default: ''
+      cloud_run_region:
+        description: 'Região do Cloud Run (default: us-central1)'
+        required: false
+        type: string
+        default: 'us-central1'
+      env_vars:
+        description: 'KEY=VAL separados por vírgula para gcloud run deploy --set-env-vars'
+        required: false
+        type: string
+        default: ''
+      env_vars_file:
+        description: 'Path no repo para env file YAML (--env-vars-file); sobrepõe env_vars se definido'
+        required: false
+        type: string
+        default: ''
+    outputs:
+      run_url:
+        description: 'URL HTML da run disparada no repo alvo'
+        value: ${{ jobs.dispatch.outputs.run_url }}
+      dispatch_status:
+        description: 'Status do dispatch: success ou failure'
+        value: ${{ jobs.dispatch.result }}
+      iac_conclusion:
+        description: 'Conclusion da run no iac-actions (success | failure | cancelled | ...)'
+        value: ${{ jobs.monitor.outputs.iac_conclusion }}
+      security_passed:
+        description: 'true se todos os jobs de segurança no iac-actions passaram'
+        value: ${{ jobs.monitor.outputs.security_passed }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trigger-build-deploy-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  # ─── Dispatch ────────────────────────────────────────────────────────────────
+  dispatch:
+    name: Dispatch workflow no A-M-Digital-Data-AI-LatAm/iac-actions
+    runs-on: ubuntu-latest
+    outputs:
+      run_url: ${{ steps.run-url.outputs.run_url }}
+    steps:
+      - name: Gerar token do GitHub App (am-deploy-helper)
+        uses: actions/create-github-app-token@5d869da34e18e7287c1daad50e0b8ea0f506ce69 # v1.11.0
+        id: app-token
+        with:
+          app-id: ${{ vars.AM_DEPLOY_HELPER_APP_ID }}
+          private-key: ${{ secrets.AM_DEPLOY_HELPER_APP_PRIVATE_KEY }}
+          owner: "A-M-Digital-Data-AI-LatAm"
+
+      - name: Checkout source repository (para autodetectar stack)
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          repository: ${{ inputs.source_repository }}
+          ref: ${{ inputs.branch }}
+          fetch-depth: 1
+          path: _source
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Autodetect code stack
+        id: detect
+        run: |
+          CODE_STACK="none"
+          HAS_PY=false; HAS_JS=false
+          SRC_DIR="_source"
+          ( [ -f "${SRC_DIR}/pyproject.toml" ] || [ -f "${SRC_DIR}/uv.lock" ] || [ -f "${SRC_DIR}/requirements.txt" ] ) && HAS_PY=true
+          ( [ -f "${SRC_DIR}/package.json" ] || [ -f "${SRC_DIR}/bun.lock" ] ) && HAS_JS=true
+          if [ "$HAS_PY" = true ] && [ "$HAS_JS" = true ]; then CODE_STACK="both"
+          elif [ "$HAS_PY" = true ]; then CODE_STACK="python"
+          elif [ "$HAS_JS" = true ]; then CODE_STACK="javascript"
+          fi
+          echo "code_stack=${CODE_STACK}" >> "$GITHUB_OUTPUT"
+          echo "Autodetected code_stack: ${CODE_STACK}"
+
+      - name: Dispatch workflow_dispatch no repo alvo
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -e
+          DISPATCHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "dispatched_at=${DISPATCHED_AT}" >> $GITHUB_OUTPUT
+
+          RUN_LABEL="${{ github.repository }}/${{ github.run_id }}"
+          echo "run_label=${RUN_LABEL}" >> $GITHUB_OUTPUT
+
+          INPUTS=$(jq -n \
+            --arg run_label          "${RUN_LABEL}" \
+            --arg source_repo        "${{ inputs.source_repository }}" \
+            --arg branch             "${{ inputs.branch }}" \
+            --arg env_target         "${{ inputs.env_target }}" \
+            --arg image_tag          "${{ inputs.image_tag }}" \
+            --arg iac_folder         "${{ inputs.iac_scripts_folder }}" \
+            --arg dockerfile_dir     "${{ inputs.dockerfile_folder }}" \
+            --arg containers_cfg     "${{ inputs.containers_config_folder }}" \
+            --arg gcp_project_id     "${{ inputs.gcp_project_id }}" \
+            --arg run_region         "${{ inputs.cloud_run_region }}" \
+            --arg env_vars           "${{ inputs.env_vars }}" \
+            --arg env_vars_file      "${{ inputs.env_vars_file }}" \
+            --arg code_stack         "${{ steps.detect.outputs.code_stack }}" \
+            '{
+              "run-label":                $run_label,
+              "source-repository":        $source_repo,
+              "branch":                   $branch,
+              "env-target":               $env_target,
+              "image_tag":                $image_tag,
+              "iac-scripts-folder":       $iac_folder,
+              "dockerfile-folder":        $dockerfile_dir,
+              "containers-config-folder": $containers_cfg,
+              "gcp-project-id":           $gcp_project_id,
+              "cloud_run_region":         $run_region,
+              "env_vars":                 $env_vars,
+              "env_vars_file":            $env_vars_file,
+              "code_stack":               $code_stack
+            }')
+
+          echo "Disparando workflow build-deploy-containers.yml em A-M-Digital-Data-AI-LatAm/iac-actions"
+          echo "Inputs: $INPUTS"
+
+          echo "$INPUTS" | gh workflow run "build-deploy-containers.yml" \
+            --repo "A-M-Digital-Data-AI-LatAm/iac-actions" \
+            --ref "main" \
+            --json
+
+          echo "✅ Dispatch enviado com sucesso"
+
+      - name: Obter URL da run disparada
+        id: run-url
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          DISPATCHED_AT="${{ steps.dispatch.outputs.dispatched_at }}"
+          WORKFLOW_FILE="build-deploy-containers.yml"
+          REPO_OWNER="A-M-Digital-Data-AI-LatAm"
+          REPO_NAME="iac-actions"
+          RUN_LABEL="${{ steps.dispatch.outputs.run_label }}"
+
+          RUN_URL=""
+          for i in $(seq 1 12); do
+            sleep 10
+            RUN_URL=$(gh api \
+              "repos/${REPO_OWNER}/${REPO_NAME}/actions/runs?event=workflow_dispatch&per_page=20" \
+              --jq "
+                [.workflow_runs[]
+                 | select(.created_at >= \"${DISPATCHED_AT}\")
+                 | select(.path == \".github/workflows/${WORKFLOW_FILE}\")
+                 | select(.display_title | contains(\"${RUN_LABEL}\"))
+                ] | sort_by(.created_at) | .[0].html_url // empty
+              " 2>/dev/null || true)
+            if [ -n "$RUN_URL" ]; then
+              break
+            fi
+            echo "Aguardando GitHub registrar a run... (tentativa $i/12)"
+          done
+          if [ -z "$RUN_URL" ]; then
+            RUN_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/actions"
+          fi
+          echo "run_url=${RUN_URL}" >> $GITHUB_OUTPUT
+          echo "✅ Run disparada: ${RUN_URL}"
+
+  # ─── Monitor ─────────────────────────────────────────────────────────────────
+  monitor:
+    name: Monitor iac-actions run
+    runs-on: ubuntu-latest
+    needs: dispatch
+    if: needs.dispatch.outputs.run_url != ''
+    outputs:
+      iac_conclusion: ${{ steps.poll.outputs.conclusion }}
+      security_passed: ${{ steps.poll.outputs.security_passed }}
+    steps:
+      - name: Gerar token do GitHub App (am-deploy-helper)
+        uses: actions/create-github-app-token@5d869da34e18e7287c1daad50e0b8ea0f506ce69 # v1.11.0
+        id: app-token
+        with:
+          app-id: ${{ vars.AM_DEPLOY_HELPER_APP_ID }}
+          private-key: ${{ secrets.AM_DEPLOY_HELPER_APP_PRIVATE_KEY }}
+          owner: "A-M-Digital-Data-AI-LatAm"
+
+      - name: Poll iac-actions run until completion
+        id: poll
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          RUN_URL="${{ needs.dispatch.outputs.run_url }}"
+          RUN_ID=$(echo "$RUN_URL" | grep -oE '[0-9]+$')
+          echo "Monitorando run: ${RUN_URL}"
+          for i in $(seq 1 60); do
+            STATUS=$(gh api "repos/A-M-Digital-Data-AI-LatAm/iac-actions/actions/runs/${RUN_ID}" --jq '.status' 2>/dev/null || echo "unknown")
+            echo "Tentativa $i/60 — status: ${STATUS}"
+            [ "$STATUS" = "completed" ] && break
+            sleep 30
+          done
+          CONCLUSION=$(gh api "repos/A-M-Digital-Data-AI-LatAm/iac-actions/actions/runs/${RUN_ID}" --jq '.conclusion' 2>/dev/null || echo "unknown")
+          SECURITY_JOBS=$(gh api "repos/A-M-Digital-Data-AI-LatAm/iac-actions/actions/runs/${RUN_ID}/jobs" \
+            --jq '[.jobs[] | select(.name | test("trivy|audit|conftest|sbom"; "i"))] | map(.conclusion) | all(. == "success")' 2>/dev/null || echo "false")
+          echo "conclusion=${CONCLUSION}" >> "$GITHUB_OUTPUT"
+          echo "security_passed=${SECURITY_JOBS}" >> "$GITHUB_OUTPUT"
+          echo "iac-actions run conclusion: ${CONCLUSION} | security_passed: ${SECURITY_JOBS}"
+
+  # ─── Summary ─────────────────────────────────────────────────────────────────
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [dispatch, monitor]
+    if: always()
+    steps:
+      - name: Imprimir resumo do dispatch
+        run: |
+          printf "Repo alvo        : A-M-Digital-Data-AI-LatAm/iac-actions\n"
+          printf "Workflow         : build-deploy-containers.yml\n"
+          printf "Env              : %s\n" "${{ inputs.env_target }}"
+          printf "Image tag        : %s\n" "${{ inputs.image_tag }}"
+          printf "Run URL          : %s\n" "${{ needs.dispatch.outputs.run_url }}"
+          printf "Status           : %s\n" "${{ needs.dispatch.result }}"
+          printf "iac_conclusion   : %s\n" "${{ needs.monitor.outputs.iac_conclusion }}"
+          printf "security_passed  : %s\n" "${{ needs.monitor.outputs.security_passed }}"

@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────
+# Fonte da verdade: iac-actions/templates/cd/cd-prod.yml
+# Copiado para app repos via sync-esteira (iac_actions_pinned_sha).
+# Mudanças devem ser feitas AQUI, no iac-actions.
+# ─────────────────────────────────────────────────────────────
+
+# CD Production — dispara build+deploy de containers e IaC quando uma release é publicada.
+# Não executa testes; usa a tag da release como ref e image_tag.
+#
+# Depende de:
+#   .github/workflows/trigger-build-and-push.yml
+#   .github/workflows/trigger-deploy.yml
+name: CD (prod)
+
+on:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: cd-prod-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+jobs:
+  # ─── Build & Deploy containers ───────────────────────────────────────────────
+  deploy-prod:
+    uses: ./.github/workflows/trigger-build-and-push.yml
+    with:
+      source_repository: ${{ github.repository }}
+      branch: ${{ github.event.release.tag_name }}
+      env_target: Production
+      image_tag: ${{ github.event.release.tag_name }}
+      containers_config_folder: .github/config/prod
+    secrets: inherit
+
+  # ─── IaC: deploy somente se houver mudança em .tf/.tfvars desde a tag anterior ─
+  detect-iac-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Check for .tf/.tfvars changes since previous tag
+        id: check
+        run: |
+          CURRENT_TAG="${{ github.event.release.tag_name }}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found; assuming IaC changed."
+            echo "changed=true" >> $GITHUB_OUTPUT
+          elif git diff --name-only "$PREV_TAG" "$CURRENT_TAG" | grep -qE '\.(tf|tfvars)$'; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  iac-deploy-prod:
+    needs: [deploy-prod, detect-iac-changes]
+    if: needs.detect-iac-changes.outputs.changed == 'true' && needs.deploy-prod.result == 'success'
+    uses: ./.github/workflows/trigger-deploy.yml
+    with:
+      tf_path: iac_scripts/
+      source_repository: ${{ github.repository }}
+      branch: ${{ github.event.release.tag_name }}
+      env_target: Production
+    secrets: inherit
+
+  # ─── Cross-check iac-actions security ────────────────────────────────────────
+  cross-check:
+    name: Cross-check iac-actions security
+    needs: [deploy-prod, iac-deploy-prod]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report cross-check
+        run: |
+          IAC_BDC="${{ needs.deploy-prod.outputs.iac_conclusion }}"
+          IAC_DEPLOY="${{ needs.iac-deploy-prod.outputs.iac_conclusion }}"
+          SEC_BDC="${{ needs.deploy-prod.outputs.security_passed }}"
+          SEC_DEPLOY="${{ needs.iac-deploy-prod.outputs.security_passed }}"
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ### Cross-check: iac-actions deploy (prod)
+          | Workflow | iac_conclusion | security_passed |
+          |----------|---------------|-----------------|
+          | build-deploy-containers | ${IAC_BDC:-skipped} | ${SEC_BDC:-n/a} |
+          | deploy (IaC) | ${IAC_DEPLOY:-skipped} | ${SEC_DEPLOY:-n/a} |
+          EOF
+          BLOCK=false
+          if [ "$IAC_BDC" = "failure" ] || [ "$IAC_DEPLOY" = "failure" ]; then
+            echo "::error::iac-actions run falhou em PROD — investigar imediatamente"
+            BLOCK=true
+          fi
+          if [ "$SEC_BDC" = "false" ] || [ "$SEC_DEPLOY" = "false" ]; then
+            echo "::error::Checks de segurança no iac-actions não passaram em PROD — deploy bloqueado"
+            BLOCK=true
+          fi
+          [ "$BLOCK" = "true" ] && exit 1 || true

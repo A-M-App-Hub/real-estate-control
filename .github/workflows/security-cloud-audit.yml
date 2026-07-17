@@ -1,0 +1,75 @@
+# ─────────────────────────────────────────────────────────────
+# Fonte da verdade: iac-actions/templates/security/security-cloud-audit.yml
+# Copiado para app repos via sync-esteira (iac_actions_pinned_sha).
+# Mudanças devem ser feitas AQUI, no iac-actions.
+# ─────────────────────────────────────────────────────────────
+
+# Gate B2 — Security Cloud Audit (Post-QA, GCP Read-Only)
+#
+# Thin caller do reusable iac-actions/.github/workflows/security-runtime-audit.yml.
+# Toda a lógica de auditoria vive no reusable — este arquivo só faz o dispatch.
+# Isso elimina drift entre o caller (app repo) e a lógica de auditoria (iac-actions).
+#
+# Triggered automaticamente via workflow_run em "CI (qa)" concluído com sucesso.
+# Também pode ser disparado manualmente via workflow_dispatch.
+#
+# Outputs (via security-runtime-audit.yml):
+#   Artifact 'security-findings-gate-b2-<run_number>.json' — findings estruturados
+#   GitHub Step Summary: resumo visual com CLOUD-AUDIT-ID + decision
+#   Commit status 'security/gate-b2'
+#
+# NOTA: Este workflow NÃO commita relatórios. A skill security-pipeline-template
+# (Fase 3) consolida os artifacts A+B1+B2 em SECURITY_REPORT.md.
+#
+# Secrets utilizados:
+#   GCP_WORKLOAD_IDENTITY_PROVIDER — provider WIF da org (org secret)
+#   GCP_SERVICE_ACCOUNT            — SA de deploy (org secret)
+# Variables utilizadas:
+#   PROJECT_ID — GCP project ID do ambiente (repo variable)
+
+name: Security — Cloud Audit Gate
+
+on:
+  workflow_run:
+    workflows: ["CI (qa)"]
+    types: [completed]
+
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit SHA ou branch a auditar (vazio = HEAD do branch selecionado)'
+        required: false
+        type: string
+        default: ''
+      region:
+        description: 'Região GCP dos Cloud Run services (vazio = detecta de iac_scripts/ ou us-central1)'
+        required: false
+        type: string
+        default: ''
+      no_fail:
+        description: 'Modo diagnóstico — não falha em CRITICAL (usar em Fase 0 smoke test)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  actions: read
+
+concurrency:
+  group: security-cloud-audit-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  cloud-audit:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    uses: A-M-Digital-Data-AI-LatAm/iac-actions/.github/workflows/security-runtime-audit.yml@main
+    secrets: inherit
+    with:
+      project_id: ${{ vars.PROJECT_ID }}
+      sha: ${{ inputs.sha || github.event.workflow_run.head_sha || github.sha }}
+      region: ${{ inputs.region || '' }}
+      no_fail: ${{ inputs.no_fail || false }}
+      env_target: QA

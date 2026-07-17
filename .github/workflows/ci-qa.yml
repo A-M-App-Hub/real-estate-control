@@ -1,0 +1,130 @@
+# ─────────────────────────────────────────────────────────────
+# Fonte da verdade: iac-actions/templates/cd/ci-qa.yml
+# Copiado para app repos via sync-esteira (iac_actions_pinned_sha).
+# Mudanças devem ser feitas AQUI, no iac-actions.
+# ─────────────────────────────────────────────────────────────
+
+# CI qa — deploy manual para QA. Disparado via workflow_dispatch.
+# Usa o SHA do commit (ou ref informado) como image_tag.
+# Deploy de IaC condicional: só dispara se houver mudança em .tf/.tfvars,
+# salvo quando workflow_dispatch envia force_apply=true (reconcile/drift).
+#
+# Depende de:
+#   .github/workflows/trigger-build-and-push.yml
+#   .github/workflows/trigger-deploy.yml
+name: CI (qa)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch ou SHA a fazer deploy (vazio = branch selecionada no UI)'
+        required: false
+        type: string
+        default: ''
+      force_apply:
+        description: 'Force IaC deploy even when no .tf/.tfvars changed (drift / manual reconcile)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+jobs:
+  # ─── Build & Deploy containers ───────────────────────────────────────────────
+  deploy-qa:
+    uses: ./.github/workflows/trigger-build-and-push.yml
+    with:
+      source_repository: ${{ github.repository }}
+      branch: ${{ inputs.ref || github.ref_name }}
+      env_target: QA
+      image_tag: ${{ inputs.ref || github.sha }}
+      containers_config_folder: .github/config/qa
+    secrets: inherit
+
+  # ─── IaC: deploy somente se houver mudança em .tf/.tfvars ───────────────────
+  detect-iac-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 2
+
+      - name: Check for .tf/.tfvars changes
+        id: check
+        run: |
+          FA="${{ inputs.force_apply }}"
+          if [[ "$FA" == "true" || "$FA" == "True" ]]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if git diff --name-only HEAD~1 HEAD | grep -qE '\.(tf|tfvars)$'; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Prohibited IaC patterns guard
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          if grep -Rn 'resource "terraform_data"' iac_scripts/ 2>/dev/null; then
+            echo "::error::Prohibited resource terraform_data in iac_scripts/"
+            exit 1
+          fi
+          if grep -Rn 'resource "random_uuid"' iac_scripts/ 2>/dev/null; then
+            echo "::error::Prohibited resource random_uuid in iac_scripts/"
+            exit 1
+          fi
+
+  iac-deploy-qa:
+    needs: detect-iac-changes
+    if: needs.detect-iac-changes.outputs.changed == 'true'
+    uses: ./.github/workflows/trigger-deploy.yml
+    with:
+      tf_path: iac_scripts/
+      source_repository: ${{ github.repository }}
+      branch: ${{ inputs.ref || github.ref_name }}
+      env_target: QA
+    secrets: inherit
+
+  # ─── Cross-check iac-actions security ────────────────────────────────────────
+  cross-check:
+    name: Cross-check iac-actions security
+    needs: [deploy-qa, iac-deploy-qa]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report cross-check
+        run: |
+          IAC_BDC="${{ needs.deploy-qa.outputs.iac_conclusion }}"
+          IAC_DEPLOY="${{ needs.iac-deploy-qa.outputs.iac_conclusion }}"
+          SEC_BDC="${{ needs.deploy-qa.outputs.security_passed }}"
+          SEC_DEPLOY="${{ needs.iac-deploy-qa.outputs.security_passed }}"
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ### Cross-check: iac-actions deploy (qa)
+          | Workflow | iac_conclusion | security_passed |
+          |----------|---------------|-----------------|
+          | build-deploy-containers | ${IAC_BDC:-skipped} | ${SEC_BDC:-n/a} |
+          | deploy (IaC) | ${IAC_DEPLOY:-skipped} | ${SEC_DEPLOY:-n/a} |
+          EOF
+          BLOCK=false
+          if [ "$IAC_BDC" = "failure" ] || [ "$IAC_DEPLOY" = "failure" ]; then
+            echo "::error::iac-actions run falhou — verificar run URL para detalhes"
+            BLOCK=true
+          fi
+          if [ "$SEC_BDC" = "false" ] || [ "$SEC_DEPLOY" = "false" ]; then
+            echo "::error::Checks de segurança no iac-actions não passaram — deploy bloqueado"
+            BLOCK=true
+          fi
+          [ "$BLOCK" = "true" ] && exit 1 || true

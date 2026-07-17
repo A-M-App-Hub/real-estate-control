@@ -1,0 +1,44 @@
+from pathlib import Path
+import os
+
+from fastapi import FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
+
+# Path prefix no App Space Hub (auth-proxy encaminha /{slug}/...).
+# Local/tests: vazio. Deploy hub: ROOT_PATH=/{slug}
+ROOT_PATH = os.environ.get("ROOT_PATH", "").rstrip("/")
+
+
+class StripRootPathMiddleware(BaseHTTPMiddleware):
+    """Remove hub path_prefix so routers keep /health and /api/v1/*."""
+
+    async def dispatch(self, request: Request, call_next):
+        if ROOT_PATH and request.scope["path"].startswith(ROOT_PATH):
+            path = request.scope["path"][len(ROOT_PATH) :] or "/"
+            request.scope["path"] = path
+        return await call_next(request)
+
+
+app = FastAPI(title="real estate control", root_path=ROOT_PATH or "")
+if ROOT_PATH:
+    app.add_middleware(StripRootPathMiddleware)
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# API routes: src/routers/ (AS2I / AS3I)
+
+_dist = Path("dist")
+if _dist.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    # AS1I: SPA na raiz (CAS return_to + OpenAPI GET /)
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="frontend")
+else:
+
+    @app.get("/")
+    def root():
+        return {"message": "Hello from real estate control"}

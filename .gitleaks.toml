@@ -1,0 +1,6 @@
+[allowlist]
+  description = "Project-specific allowlist"
+  paths = [
+    '''(^|/)\.env\.example$''',
+    '''(^|/)docs/.*\.md$''',
+  ]

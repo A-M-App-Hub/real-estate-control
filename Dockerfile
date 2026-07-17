@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM oven/bun:1 AS frontend-build
 WORKDIR /frontend
-COPY frontend/package.json frontend/bun.lockb* ./
+COPY frontend/package.json frontend/bun.lock ./
 RUN bun install
 COPY frontend/ ./
 RUN bun run build
